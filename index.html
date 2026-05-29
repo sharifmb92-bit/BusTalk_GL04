@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BusTalk Global</title>
+    <!-- Tailwind para los estilos -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    
+    <!-- Librerías de Firebase (Solo Base de Datos en tiempo real, SIN almacenamiento de archivos) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    
+    <!-- PeerJS para audio P2P en tiempo real (Estilo Walkie-Talkie real) -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
+    <style>
+        .bg-parabolica {
+            background-image: linear-gradient(to bottom, rgba(17, 24, 39, 0.85), rgba(17, 24, 39, 0.95)), url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=500&q=80');
+            background-size: cover;
+            background-position: center;
+        }
+        @keyframes parpadeoBus {
+            0%, 100% { opacity: 0.4; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1.02); filter: drop-shadow(0 0 8px rgba(234, 179, 8, 0.4)); }
+        }
+        .animacion-bus {
+            animation: parpadeoBus 2.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans min-h-screen flex flex-col justify-between p-4 selection:bg-yellow-500/30">
+
+    <!-- PANTALLA DE LOGIN -->
+    <div id="pantallaLogin" class="max-w-md w-full mx-auto my-auto bg-gray-900 rounded-2xl shadow-2xl p-6 border border-gray-800">
+        <div class="text-center mb-7">
+            <div class="inline-flex items-center justify-center p-4 bg-yellow-500/10 rounded-full text-yellow-500 mb-4 animacion-bus">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 16v3a1 1 0 01-1 1H6a1 1 0 01-1-1v-3m14 0V9a2 2 0 00-2-2H7a2 2 0 00-2 2v7m14 0H5m2 4h2m6 0h2m-8-4V10h10v6M7 10h10M4 10h1m14 0h1M9 7h6" />
+                </svg>
+            </div>
+            <h1 class="text-2xl font-black text-white tracking-wider uppercase">BusTalk <span class="text-yellow-500 text-sm font-medium lowercase">global</span></h1>
+            <p class="text-gray-400 text-xs mt-1">Configura tu terminal de conducción</p>
+        </div>
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Tu Nombre o Alias</label>
+                <input type="text" id="inputNombre" placeholder="Ej: Conductor 42" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-yellow-500 transition-colors">
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="col-span-1">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Nº Bus</label>
+                    <input type="text" id="inputBus" placeholder="180" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-white text-center font-bold focus:outline-none focus:border-yellow-500 transition-colors">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Código de Línea</label>
+                    <input type="text" id="inputComunidad" placeholder="Ej: LINEA-01" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white uppercase font-mono tracking-wider focus:outline-none focus:border-yellow-500 transition-colors">
+                </div>
+            </div>
+
+            <button onclick="iniciarApp()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-gray-950 font-black py-3 rounded-xl transition-all shadow-lg shadow-yellow-900/20 active:scale-98 cursor-pointer mt-2 uppercase tracking-wider text-sm">
+                Iniciar Terminal
+            </button>
+        </div>
+    </div>
+
+    <!-- PANTALLA PRINCIPAL DE LA APP -->
+    <div id="pantallaApp" class="max-w-md w-full mx-auto bg-gray-900 rounded-2xl shadow-2xl overflow-hidden border border-gray-800 flex-col flex-1 hidden">
+        
+        <div class="bg-parabolica p-4 flex justify-between items-center border-b border-gray-800 shadow-md">
+            <div class="flex items-center gap-3">
+                <div class="bg-yellow-500 text-gray-950 font-black px-3 py-1.5 rounded-lg text-sm tracking-wide shadow shadow-black flex flex-col items-center justify-center">
+                    <span class="text-[9px] uppercase font-bold text-gray-800 leading-none">BUS</span>
+                    <span id="txtNumeroBus" class="text-base leading-none mt-0.5">---</span>
+                </div>
+                <div>
+                    <h2 class="text-xl font-black tracking-wider uppercase m-0 leading-none">
+                        <span class="text-yellow-500">Bus</span><span class="text-white">Talk</span>
+                    </h2>
+                    <p id="txtComunidadActiva" class="text-[10px] font-mono text-gray-400 uppercase tracking-widest mt-1">GRUPO: ---</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+                <button onclick="conectarBluetooth()" id="btnBluetooth" class="p-2 bg-gray-800/80 text-blue-400 rounded-lg border border-gray-700/50 hover:bg-gray-700 transition-all cursor-pointer" title="Vincular Manos Libres">
+                    🎙️
+                </button>
+                <button onclick="salirApp()" class="p-2 bg-red-950/80 text-red-400 rounded-lg border border-red-900/50 hover:bg-red-900 transition-all cursor-pointer font-bold text-xs">
+                    🚪 Salir
+                </button>
+            </div>
+        </div>
+
+        <div class="p-4 flex flex-col flex-1 justify-between gap-4">
+            
+            <div class="bg-gray-950 border border-gray-850 rounded-xl p-3 flex flex-col gap-3 flex-1 justify-between min-h-[150px]">
+                <div>
+                    <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Compañeros en ruta:</span>
+                    <div id="listaUsuariosConectados" class="flex flex-wrap gap-1.5 text-xs">
+                        <span class="bg-gray-900 text-gray-400 px-2 py-0.5 rounded-md border border-gray-800 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span> Conectando...
+                        </span>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-900 pt-2 flex-1 flex flex-col justify-end">
+                    <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Actividad de Radio:</span>
+                    <div id="listaMensajes" class="space-y-1.5 text-xs max-h-[120px] overflow-y-auto">
+                        <p class="text-gray-600 italic text-center py-2">Canal limpio y en escucha...</p>
+                    </div>
+                </div>
+
+                <!-- Contenedor invisible para los reproductores de audio en vivo -->
+                <div id="contenedorAudio" class="hidden"></div>
+                <!-- Reproductor oculto para el botón de "Repetir" -->
+                <audio id="audioReplayLocal" class="hidden"></audio>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 py-4 px-2 bg-gray-900/50 rounded-2xl border border-gray-800/40">
+                
+                <button onclick="repetirUltimoAudioLocal()" id="btnReplay" class="flex-1 max-w-[85px] py-4 px-1 rounded-xl text-center bg-gray-950 border border-gray-800 hover:bg-gray-900 transition-all text-gray-300 cursor-pointer shadow-sm active:scale-95">
+                    <span class="block text-xl mb-1">↩️</span>
+                    <span class="block text-[9px] font-black uppercase tracking-wider leading-none text-gray-400">Repetir</span>
+                </button>
+
+                <button id="btnPTT" onpointerdown="iniciarMicrofono(false)" onpointerup="detenerMicrofono()" onpointerleave="detenerMicrofono()" class="w-28 h-28 rounded-full bg-yellow-500 border-4 border-yellow-600/40 flex flex-col items-center justify-center transition-all duration-300 shadow-xl shadow-yellow-950/10 cursor-pointer select-none active:scale-95 z-10 shrink-0 touch-none">
+                    <span id="pttIcon" class="text-gray-950 text-2xl mb-0.5">🎙️</span>
+                    <span id="pttTexto" class="text-[9px] font-black text-gray-950 uppercase tracking-wider text-center px-1 leading-tight">Mantener para hablar</span>
+                </button>
+
+                <button id="btnBroadcast" onpointerdown="iniciarMicrofono(true)" onpointerup="detenerMicrofono()" onpointerleave="detenerMicrofono()" class="flex-1 max-w-[85px] py-4 px-1 rounded-xl text-center bg-gray-950 border border-gray-800 hover:bg-gray-900 transition-all text-gray-300 cursor-pointer shadow-sm active:scale-95 touch-none">
+                    <span id="btnBroadcastIcon" class="block text-xl mb-1">📢</span>
+                    <span id="btnBroadcastTexto" class="block text-[9px] font-black uppercase tracking-wider leading-none text-gray-400">A Todos</span>
+                </button>
+                
+            </div>
+            <p class="text-[10px] text-gray-500 text-center leading-tight">Para evitar cortes de voz, mantén el botón pulsado mientras hablas y suéltalo al terminar.</p>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURACIÓN FIREBASE ---
+        // ¡IMPORTANTE! SUSTITUYE ESTOS DATOS POR LOS DE TU FIREBASE REAL
+        const firebaseConfig = {
+            apiKey: "TU_API_KEY_AQUÍ",
+            authDomain: "misturnos-fe3ea.firebaseapp.com",
+            projectId: "misturnos-fe3ea",
+            storageBucket: "misturnos-fe3ea.appspot.com",
+            messagingSenderId: "TU_SENDER_ID",
+            appId: "TU_APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // --- 2. VARIABLES GLOBALES ---
+        let usuario = "";
+        let comunidad = "";
+        let numBus = "";
+        let wakeLock = null; 
+        
+        // Variables WebRTC (Audio en vivo)
+        let miPeer = null;
+        let miPeerId = null;
+        let flujoMicrofonoLocal = null;
+        let llamadasActivas = [];
+        
+        // Variables para grabar en RAM (Botón Repetir)
+        let grabadoraLocal = null;
+        let urlUltimoAudioMemoria = null;
+        let fragmentosAudioEnMemoria = [];
+        let desvincularSenales = null;
+        let desvincularConectados = null;
+
+        // Limpiar al cerrar la app bruscamente
+        window.addEventListener('beforeunload', () => {
+            if (miPeerId) db.collection("usuarios_activos").doc(miPeerId).delete();
+        });
+
+        // --- 3. INICIALIZACIÓN ---
+        async function iniciarApp() {
+            const inputNombre = document.getElementById('inputNombre').value.trim();
+            const inputComunidad = document.getElementById('inputComunidad').value.trim().toUpperCase();
+            const inputBus = document.getElementById('inputBus').value.trim();
+
+            if (!inputNombre || !inputComunidad || !inputBus) {
+                alert("Por favor, rellena todos los campos.");
+                return;
+            }
+
+            usuario = inputNombre;
+            comunidad = inputComunidad;
+            numBus = inputBus;
+
+            document.getElementById('txtNumeroBus').textContent = numBus;
+            document.getElementById('txtComunidadActiva').textContent = `GRUPO: ${comunidad}`;
+            document.getElementById('pantallaLogin').classList.add('hidden');
+            document.getElementById('pantallaApp').classList.remove('hidden');
+            document.getElementById('pantallaApp').classList.add('flex');
+
+            mantenerPantallaEncendida();
+            iniciarWebRTC();
+        }
+
+        async function mantenerPantallaEncendida() {
+            try {
+                if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+            } catch (err) { console.error('Pantalla podría apagarse:', err); }
+        }
+
+        // --- 4. MOTOR DE AUDIO EN VIVO (WebRTC) ---
+        function iniciarWebRTC() {
+            // Conectar al servidor gratuito de PeerJS para P2P
+            miPeer = new Peer();
+
+            miPeer.on('open', (id) => {
+                miPeerId = id;
+                // Registrar que estoy online en la base de datos para que me llamen
+                db.collection("usuarios_activos").doc(miPeerId).set({
+                    usuario: usuario, bus: numBus, comunidad: comunidad, peerId: miPeerId, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                escucharConectados();
+                escucharSenalesVisuales();
+            });
+
+            // CUANDO ALGUIEN ME HABLA (Recibo llamada de voz)
+            miPeer.on('call', (llamadaEntrante) => {
+                llamadaEntrante.answer(); // Respondo automáticamente (modo walkie-talkie)
+                
+                llamadaEntrante.on('stream', (flujoAudioRemoto) => {
+                    reproducirAudioEnVivo(flujoAudioRemoto);
+                    grabarAudioTemporalParaReplay(flujoAudioRemoto);
+                });
+            });
+        }
+
+        // CUANDO YO PULSO PARA HABLAR (Transmisión)
+        async function iniciarMicrofono(esGlobal) {
+            if (flujoMicrofonoLocal) return; // Evitar doble pulsación
+
+            const btnPTT = document.getElementById('btnPTT');
+            const pttTexto = document.getElementById('pttTexto');
+            const btnBC = document.getElementById('btnBroadcast');
+
+            try {
+                // Solicitar micro con filtros de reducción de ruido (vital en autobuses)
+                flujoMicrofonoLocal = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+                });
+
+                // Cambios Visuales
+                if (esGlobal) {
+                    btnBC.className = "flex-1 max-w-[85px] py-4 px-1 rounded-xl text-center bg-red-950 border border-red-500 text-red-400 font-bold scale-105 z-20 shrink-0";
+                    btnBC.querySelector('span:last-child').textContent = "EN AIRE";
+                } else {
+                    btnPTT.className = "w-28 h-28 rounded-full bg-red-950 border-4 border-red-500 flex flex-col items-center justify-center transition-all duration-300 shadow-xl shadow-red-900/40 cursor-pointer scale-105 z-10 shrink-0";
+                    pttTexto.textContent = "HABLANDO...";
+                    pttTexto.className = "text-[9px] font-black text-red-400 uppercase tracking-wider text-center px-1 leading-tight";
+                }
+
+                // Obtener a quién tengo que enviar la voz
+                let consulta = db.collection("usuarios_activos");
+                if (!esGlobal) consulta = consulta.where("comunidad", "==", comunidad);
+                
+                const snapshot = await consulta.get();
+                
+                // Enviar señal visual a Firestore para que los demás vean mi nombre en pantalla
+                db.collection("senales_pantalla").add({
+                    usuario: usuario, bus: numBus, peerId: miPeerId, comunidad: comunidad, esGlobal: esGlobal, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Llamar directamente a los conductores conectados (P2P)
+                snapshot.forEach(doc => {
+                    const datosReceptor = doc.data();
+                    if (datosReceptor.peerId !== miPeerId) { // No llamarme a mí mismo
+                        const llamada = miPeer.call(datosReceptor.peerId, flujoMicrofonoLocal);
+                        llamadasActivas.push(llamada);
+                    }
+                });
+
+            } catch (error) {
+                alert("Permiso de micrófono denegado.");
+                detenerMicrofono();
+            }
+        }
+
+        // CUANDO YO SUELTO EL BOTÓN
+        function detenerMicrofono() {
+            if (!flujoMicrofonoLocal) return;
+
+            // Restaurar botones
+            const btnPTT = document.getElementById('btnPTT');
+            const pttTexto = document.getElementById('pttTexto');
+            const btnBC = document.getElementById('btnBroadcast');
+
+            btnPTT.className = "w-28 h-28 rounded-full bg-yellow-500 border-4 border-yellow-600/40 flex flex-col items-center justify-center transition-all duration-300 shadow-xl shadow-yellow-950/10 cursor-pointer select-none active:scale-95 z-10 shrink-0 touch-none";
+            pttTexto.textContent = "Mantener para hablar";
+            pttTexto.className = "text-[9px] font-black text-gray-950 uppercase tracking-wider text-center px-1 leading-tight";
+            
+            btnBC.className = "flex-1 max-w-[85px] py-4 px-1 rounded-xl text-center bg-gray-950 border border-gray-800 hover:bg-gray-900 transition-all text-gray-300 cursor-pointer shadow-sm active:scale-95 touch-none";
+            btnBC.querySelector('span:last-child').textContent = "A Todos";
+
+            // Detener emisión
+            flujoMicrofonoLocal.getTracks().forEach(track => track.stop());
+            flujoMicrofonoLocal = null;
+
+            // Cerrar conexiones
+            llamadasActivas.forEach(llamada => llamada.close());
+            llamadasActivas = [];
+        }
+
+        // --- 5. REPRODUCCIÓN Y GRABACIÓN EN RAM (BOTÓN REPETIR) ---
+        function reproducirAudioEnVivo(stream) {
+            const contenedor = document.getElementById('contenedorAudio');
+            const audioElem = document.createElement('audio');
+            audioElem.srcObject = stream;
+            audioElem.autoplay = true;
+            contenedor.appendChild(audioElem);
+
+            // Eliminar elemento de audio cuando termine de hablar
+            stream.getTracks()[0].onended = () => audioElem.remove();
+        }
+
+        function grabarAudioTemporalParaReplay(stream) {
+            fragmentosAudioEnMemoria = [];
+            grabadoraLocal = new MediaRecorder(stream);
+            
+            grabadoraLocal.ondataavailable = e => fragmentosAudioEnMemoria.push(e.data);
+            
+            grabadoraLocal.onstop = () => {
+                const blob = new Blob(fragmentosAudioEnMemoria, { type: 'audio/webm' });
+                // Limpiar la memoria anterior para no saturar la RAM de la tablet
+                if (urlUltimoAudioMemoria) URL.revokeObjectURL(urlUltimoAudioMemoria);
+                urlUltimoAudioMemoria = URL.createObjectURL(blob);
+            };
+
+            grabadoraLocal.start();
+            stream.getTracks()[0].onended = () => { if(grabadoraLocal.state !== "inactive") grabadoraLocal.stop(); };
+        }
+
+        function repetirUltimoAudioLocal() {
+            if (urlUltimoAudioMemoria) {
+                const reproductor = document.getElementById('audioReplayLocal');
+                reproductor.src = urlUltimoAudioMemoria;
+                reproductor.play();
+            } else {
+                alert("Aún no has recibido ningún mensaje de radio para repetir.");
+            }
+        }
+
+        // --- 6. INTERFAZ Y ACTUALIZACIONES EN TIEMPO REAL ---
+        
+        function escucharConectados() {
+            desvincularConectados = db.collection("usuarios_activos").where("comunidad", "==", comunidad)
+                .onSnapshot(snapshot => {
+                    const contenedor = document.getElementById('listaUsuariosConectados');
+                    contenedor.innerHTML = '';
+                    
+                    let hayCompaneros = false;
+
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        
+                        // AQUI ESTÁ LA CLAVE: Omitir mi propio dispositivo
+                        if (data.peerId !== miPeerId) {
+                            hayCompaneros = true;
+                            const item = document.createElement('span');
+                            item.className = "bg-gray-850 text-gray-300 px-2 py-0.5 rounded-md border border-gray-800 text-[11px] flex items-center gap-1 shadow-sm";
+                            item.innerHTML = `<span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> [B:${data.bus}] ${data.usuario}`;
+                            contenedor.appendChild(item);
+                        }
+                    });
+
+                    // Si la lista de los DEMÁS está vacía
+                    if (!hayCompaneros) {
+                        contenedor.innerHTML = `
+                            <span class="bg-gray-900 text-gray-400 px-2 py-0.5 rounded-md border border-gray-800 text-[11px] flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span> Esperando compañeros...
+                            </span>
+                        `;
+                    }
+                });
+        }
+
+        function escucharSenalesVisuales() {
+            desvincularSenales = db.collection("senales_pantalla")
+                .orderBy("timestamp", "desc").limit(1)
+                .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === "added") {
+                            const data = change.doc.data();
+                            
+                            // AQUI ESTÁ LA CLAVE 2: Ignorar si soy yo mismo el que envía
+                            if (!data.peerId || data.peerId === miPeerId) return;
+                            
+                            if (data.esGlobal || data.comunidad === comunidad) {
+                                mostrarMensajeEnPantalla(
+                                    data.esGlobal ? `📢 GENERAL (Bus ${data.bus})` : `[Grupo] Bus ${data.bus}`, 
+                                    data.usuario, 
+                                    data.esGlobal
+                                );
+                            }
+                        }
+                    });
+                });
+        }
+
+        function mostrarMensajeEnPantalla(origen, conductor, esGlobal) {
+            const lista = document.getElementById('listaMensajes');
+            if (lista.innerHTML.includes('Canal limpio')) lista.innerHTML = '';
+            
+            const item = document.createElement('div');
+            item.className = esGlobal 
+                ? "flex justify-between items-center bg-red-950/30 border border-red-900/40 px-2.5 py-1.5 rounded-lg shadow-inner animate-pulse"
+                : "flex justify-between items-center bg-gray-900 border border-gray-800 px-2.5 py-1.5 rounded-lg shadow-inner";
+            
+            item.innerHTML = `
+                <span class="font-bold text-[11px] ${esGlobal ? 'text-red-400' : 'text-yellow-500'}">${origen} - ${conductor}:</span>
+                <span class="text-gray-400 text-[11px]">🔊 Hablando...</span>
+            `;
+            lista.insertBefore(item, lista.firstChild);
+        }
+
+        function salirApp() {
+            detenerMicrofono();
+            if (miPeerId) db.collection("usuarios_activos").doc(miPeerId).delete();
+            if (miPeer) miPeer.destroy();
+            if (desvincularSenales) desvincularSenales();
+            if (desvincularConectados) desvincularConectados();
+            if (wakeLock) wakeLock.release().then(() => wakeLock = null);
+
+            document.getElementById('pantallaApp').classList.remove('flex');
+            document.getElementById('pantallaApp').classList.add('hidden');
+            document.getElementById('pantallaLogin').classList.remove('hidden');
+        }
+
+        async function conectarBluetooth() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+                alert("Vinculado al manos libres: " + device.name);
+            } catch (e) {
+                alert("Buscando sistemas de audio manos libres vinculados a la tablet...");
+            }
+        }
+    </script>
+</body>
+</html>
